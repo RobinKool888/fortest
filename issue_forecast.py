@@ -85,7 +85,7 @@ def extract_curve(png_path: str) -> pd.DataFrame:
 
     # ── 提取纯绿色像素 (G 高、R/B 低) ──
     G, R, B = arr[:, :, 1], arr[:, :, 0], arr[:, :, 2]
-    mask = (G > 80) & (R < 50) & (B < 50)
+    mask = (G > GREEN_CHANNEL_MIN) & (R < RED_BLUE_CHANNEL_MAX) & (B < RED_BLUE_CHANNEL_MAX)
     rows_px, cols_px = np.where(mask)
 
     if len(rows_px) == 0:
@@ -178,7 +178,7 @@ def model_sqrt(t, a, b):
 
 def model_log3(t, a, b, c):
     """三参数对数: a + b * ln(t + c)"""
-    return a + b * np.log(np.maximum(t + c, 1e-6))
+    return a + b * np.log(np.maximum(t + c, LOG_EPSILON))
 
 def model_logistic(t, L, k, t0):
     """Logistic（S 形）: L / (1 + exp(-k*(t-t0)))"""
@@ -287,6 +287,13 @@ def make_predictions(results, best_name, ref_date=None):
 # ─────────────────────────────────────────────
 # 5. 可视化
 # ─────────────────────────────────────────────
+# Pixel thresholds for green curve detection
+GREEN_CHANNEL_MIN = 80   # G channel must be above this
+RED_BLUE_CHANNEL_MAX = 50  # R and B channels must be below this
+
+# Small constant to avoid log(0)
+LOG_EPSILON = 1e-6
+
 DARK_BG   = "#0d1117"
 GREEN_LINE = "#39d353"
 GREEN_LITE = "#7ee787"
