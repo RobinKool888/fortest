@@ -1,0 +1,115 @@
+name: Issue Trend Forecast
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Trigger: manual dispatch from the GitHub Actions UI.
+#
+# How to use
+# ----------
+# 1. Commit your curve image to the repository as `curve.png`
+#    (or supply a custom path via the `image_path` input).
+# 2. Go to Actions → "Issue Trend Forecast" → "Run workflow".
+# 3. Fill in the four required edge-calibration inputs and click Run.
+# 4. After the job finishes, download the "forecast-outputs" artifact which
+#    contains all five output files:
+#      • extracted_data.csv        (Step 1 – raw curve data)
+#      • fit_comparison.png        (Step 2 – all-model fit overlay)
+#      • model_r2_comparison.png   (Step 2 – R² bar chart)
+#      • predictions.csv           (Step 3 – numeric forecast table)
+#      • forecast.png              (Step 3 – best-model forecast chart)
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      left_date:
+        description: "Left-edge date of the chart X-axis  (YYYY-MM-DD)"
+        required: true
+        type: string
+      left_count:
+        description: "Issue count at the left edge"
+        required: true
+        type: string
+      right_date:
+        description: "Right-edge date of the chart X-axis  (YYYY-MM-DD)"
+        required: true
+        type: string
+      right_count:
+        description: "Issue count at the right edge"
+        required: true
+        type: string
+      today:
+        description: "Forecast reference date (default = right_date)  (YYYY-MM-DD)"
+        required: false
+        type: string
+        default: ""
+      future_days:
+        description: "Space-separated forecast horizons in days (default: 30 60 90 180 365 730)"
+        required: false
+        type: string
+        default: "30 60 90 180 365 730"
+      image_path:
+        description: "Path to the curve PNG inside the repo (default: curve.png)"
+        required: false
+        type: string
+        default: "curve.png"
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Install CJK fonts (prevents □ boxes in charts) ───────────────────
+      - name: Install CJK fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          # Rebuild matplotlib font cache to pick up the new font
+          python3 -c "import matplotlib.font_manager as fm; fm._fmcache = ''; fm.fontManager.__init__(fm.fontManager)"  2>/dev/null || true
+
+      # ── 3. Install Python dependencies ──────────────────────────────────────
+      - name: Install Python dependencies
+        run: |
+          pip install --quiet numpy scipy matplotlib pillow pandas
+
+      # ── 4. Clear matplotlib font cache (ensure new fonts are found) ─────────
+      - name: Rebuild matplotlib font cache
+        run: python3 -c "import matplotlib.font_manager; matplotlib.font_manager._load_fontmanager(try_read_cache=False)"
+
+      # ── 5. Run the forecast script ───────────────────────────────────────────
+      - name: Run issue_forecast.py
+        run: |
+          # Build the today flag only when provided
+          TODAY_FLAG=""
+          if [ -n "${{ inputs.today }}" ]; then
+            TODAY_FLAG="--today ${{ inputs.today }}"
+          fi
+
+          python3 issue_forecast.py \
+            --image      "${{ inputs.image_path }}" \
+            --left-date  "${{ inputs.left_date }}" \
+            --left-count "${{ inputs.left_count }}" \
+            --right-date "${{ inputs.right_date }}" \
+            --right-count "${{ inputs.right_count }}" \
+            --out-dir    output \
+            --future-days ${{ inputs.future_days }} \
+            $TODAY_FLAG
+
+      # ── 6. Upload all outputs as a single downloadable artifact ─────────────
+      - name: Upload forecast outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: forecast-outputs
+          path: |
+            output/extracted_data.csv
+            output/fit_comparison.png
+            output/model_r2_comparison.png
+            output/predictions.csv
+            output/forecast.png
+          retention-days: 30
+          if-no-files-found: error

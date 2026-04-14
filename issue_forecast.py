@@ -63,26 +63,46 @@ MUTED_TEXT  = "#8b949e"
 
 
 # ─────────────────────────────────────────────
-# 0. 字体配置（中文支持）
+# 0. Font setup — CJK-aware with English fallback
 # ─────────────────────────────────────────────
-def _setup_font():
-    candidates = [
-        "Noto Sans CJK SC", "WenQuanYi Micro Hei", "SimHei",
-        "PingFang SC", "Microsoft YaHei", "DejaVu Sans",
+def _setup_font() -> bool:
+    """
+    Try to configure a CJK-capable font.
+    Returns True if a CJK font was found, False otherwise.
+    When False, all chart text should use English to avoid □ boxes.
+    """
+    cjk_candidates = [
+        "Noto Sans CJK SC", "Noto Sans CJK TC",
+        "WenQuanYi Micro Hei", "WenQuanYi Zen Hei",
+        "SimHei", "SimSun", "PingFang SC", "Microsoft YaHei",
+        "Source Han Sans CN", "Source Han Sans SC",
     ]
     available = {f.name for f in fm.fontManager.ttflist}
-    for c in candidates:
+
+    for c in cjk_candidates:
         if c in available:
             rcParams["font.family"] = c
-            return
-    for f in fm.fontManager.ttflist:
-        if any(kw in f.name.lower() for kw in ("cjk", "chinese", "wqy", "noto")):
-            rcParams["font.family"] = f.name
-            return
-    rcParams["font.family"] = "DejaVu Sans"
+            return True
 
-_setup_font()
+    # Broader scan for any CJK font the system may have
+    for f in fm.fontManager.ttflist:
+        name_lower = f.name.lower()
+        if any(kw in name_lower for kw in ("cjk", "chinese", "wqy", "noto", "simsun", "simhei")):
+            rcParams["font.family"] = f.name
+            return True
+
+    # No CJK font found — fall back to default; use English labels in charts
+    rcParams["font.family"] = "DejaVu Sans"
+    return False
+
+
+_CJK_OK: bool = _setup_font()
 rcParams["axes.unicode_minus"] = False
+
+
+def _L(zh: str, en: str) -> str:
+    """Return the Chinese string when a CJK font is available, English otherwise."""
+    return zh if _CJK_OK else en
 
 
 # ─────────────────────────────────────────────
@@ -208,19 +228,19 @@ def model_exp_decay(t, a, b, c):
 
 def _make_models(y0: float, y1: float) -> dict:
     """
-    根据数据范围动态生成模型初始猜测值，提高拟合鲁棒性。
-    y0 = 数据起点值, y1 = 数据终点值
+    Build model definitions with initial guesses derived from the data range.
+    y0 = starting value, y1 = ending value
     """
-    delta = abs(y1 - y0)
-    t_half = 90  # 假设约 90 天到增量一半
+    delta  = abs(y1 - y0)
+    t_half = 90  # assume ~90 days to reach half the total increment
     return {
-        "两参数对数": (model_log2,    [y0, delta],               {}),
-        "幂函数":     (model_power,   [y0, delta * 0.5, 0.4],    {}),
-        "平方根":     (model_sqrt,    [y0, delta * 0.1],         {}),
-        "三参数对数": (model_log3,    [y0 * 0.6, delta, 5.0],    {}),
-        "Logistic":   (model_logistic,[y1 * 1.05, 0.015, t_half],{}),
-        "混合模型":   (model_mixed,   [y0, delta * 0.05, delta * 0.3], {}),
-        "减速指数":   (model_exp_decay,[y1 * 1.05, delta * 1.2, 0.015], {}),
+        _L("两参数对数", "Log-2P"):    (model_log2,       [y0, delta],                    {}),
+        _L("幂函数",     "Power"):     (model_power,      [y0, delta * 0.5, 0.4],         {}),
+        _L("平方根",     "Sqrt"):      (model_sqrt,       [y0, delta * 0.1],              {}),
+        _L("三参数对数", "Log-3P"):    (model_log3,       [y0 * 0.6, delta, 5.0],         {}),
+        "Logistic":                    (model_logistic,   [y1 * 1.05, 0.015, t_half],     {}),
+        _L("混合模型",   "Mixed"):     (model_mixed,      [y0, delta * 0.05, delta * 0.3],{}),
+        _L("减速指数",   "Exp-Decay"): (model_exp_decay,  [y1 * 1.05, delta * 1.2, 0.015],{}),
     }
 
 
@@ -378,12 +398,12 @@ def _plot_fit_comparison(
     _dark_axes(ax)
 
     ax.scatter(df["date"], y_vals, color=GREEN_LITE, s=3, alpha=0.6,
-               zorder=3, label="提取数据点")
+               zorder=3, label=_L("提取数据点", "Extracted data"))
 
     # 标注左右端锚点
     for d, c, lbl in [
-        (df["date"].iloc[0],  y_vals[0],  f"左端点 ({df['date'].iloc[0].date()})"),
-        (df["date"].iloc[-1], y_vals[-1], f"右端点 ({df['date'].iloc[-1].date()})"),
+        (df["date"].iloc[0],  y_vals[0],  _L(f"左端点 ({df['date'].iloc[0].date()})", f"Left edge ({df['date'].iloc[0].date()})")),
+        (df["date"].iloc[-1], y_vals[-1], _L(f"右端点 ({df['date'].iloc[-1].date()})", f"Right edge ({df['date'].iloc[-1].date()})")),
     ]:
         ax.scatter([d], [c], color="#ff7b72", s=80, zorder=5)
         ax.annotate(f"{lbl}\n{c:,.0f}", (d, c),
@@ -395,13 +415,13 @@ def _plot_fit_comparison(
         y_smooth = info["func"](t_smooth, *info["popt"])
         lw    = 2.5 if name == best_name else 1.0
         ls    = "-"  if name == best_name else "--"
-        label = f"{'★ ' if name == best_name else ''}{name} (R²={info['r2']:.4f})"
+        label = f"{'* ' if name == best_name else ''}{name} (R\u00b2={info['r2']:.4f})"
         ax.plot(smooth_dates, y_smooth, color=color, lw=lw, ls=ls,
                 label=label, zorder=4 if name == best_name else 2)
 
-    ax.set_xlabel("日期", fontsize=11)
-    ax.set_ylabel("Issue 累积数量", fontsize=11)
-    ax.set_title("Issue 趋势 — 多模型拟合对比", fontsize=13, pad=12)
+    ax.set_xlabel(_L("日期", "Date"), fontsize=11)
+    ax.set_ylabel(_L("Issue 累积数量", "Cumulative Issues"), fontsize=11)
+    ax.set_title(_L("Issue 趋势 — 多模型拟合对比", "Issue Trend - Multi-model Fit Comparison"), fontsize=13, pad=12)
     ax.legend(loc="upper left", fontsize=8.5,
               facecolor="#161b22", edgecolor=GRID_COLOR,
               labelcolor=TEXT_COLOR, framealpha=0.85)
@@ -433,8 +453,8 @@ def _plot_model_r2_bar(results: dict, out_path: str):
                 f"{val:.4f}", va="center", ha="right",
                 color=DARK_BG, fontsize=9, fontweight="bold")
     ax.set_xlim(min(r2vals_s) * 0.98, 1.005)
-    ax.set_xlabel("R²", fontsize=10)
-    ax.set_title("各模型拟合优度对比 (R²)", fontsize=12)
+    ax.set_xlabel(_L("R²", "R\u00b2"), fontsize=10)
+    ax.set_title(_L("各模型拟合优度对比 (R²)", "Model Goodness-of-Fit Comparison (R\u00b2)"), fontsize=12)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, facecolor=DARK_BG)
     plt.close(fig)
@@ -471,9 +491,9 @@ def _plot_forecast(
     pred_mask = np.array(dates_all) >= ref_date
 
     ax.plot(np.array(dates_all)[hist_mask], y_all[hist_mask],
-            color=GREEN_LINE, lw=2, label=f"历史拟合 ({best_name})")
+            color=GREEN_LINE, lw=2, label=_L(f"历史拟合 ({best_name})", f"Historical fit ({best_name})"))
     ax.plot(np.array(dates_all)[pred_mask], y_all[pred_mask],
-            color=CYAN_LINE, lw=2, ls="--", label="预测趋势")
+            color=CYAN_LINE, lw=2, ls="--", label=_L("预测趋势", "Forecast trend"))
 
     ax.scatter(df["date"], y_vals, color=GREEN_LITE, s=3, alpha=0.4, zorder=3)
 
@@ -489,12 +509,15 @@ def _plot_forecast(
         )
 
     ax.axvline(ref_date, color=ORANGE_LINE, lw=1, ls=":", alpha=0.8,
-               label=f"预测起点 ({ref_date.date()})")
+               label=_L(f"预测起点 ({ref_date.date()})", f"Forecast start ({ref_date.date()})"))
 
-    ax.set_xlabel("日期", fontsize=11)
-    ax.set_ylabel("Issue 累积数量", fontsize=11)
+    ax.set_xlabel(_L("日期", "Date"), fontsize=11)
+    ax.set_ylabel(_L("Issue 累积数量", "Cumulative Issues"), fontsize=11)
     ax.set_title(
-        f"Issue 趋势预测  [{best_name}  R²={info['r2']:.4f}]",
+        _L(
+            f"Issue 趋势预测  [{best_name}  R\u00b2={info['r2']:.4f}]",
+            f"Issue Trend Forecast  [{best_name}  R\u00b2={info['r2']:.4f}]",
+        ),
         fontsize=13, pad=12,
     )
     ax.legend(loc="upper left", fontsize=9,
@@ -507,7 +530,7 @@ def _plot_forecast(
     ax2.tick_params(colors=MUTED_TEXT, labelsize=8)
     ylim = ax.get_ylim()
     ax2.set_ylim([(y - ref_count) / ref_count * 100 for y in ylim])
-    ax2.set_ylabel("相对增幅 (%)", color=MUTED_TEXT, fontsize=9)
+    ax2.set_ylabel(_L("相对增幅 (%)", "Relative Growth (%)"), color=MUTED_TEXT, fontsize=9)
     ax2.spines["right"].set_edgecolor(GRID_COLOR)
 
     fig.autofmt_xdate()
