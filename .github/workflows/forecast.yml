@@ -48,10 +48,10 @@ on:
         type: string
         default: "30 60 90 180 365 730"
       image_path:
-        description: "Path to the curve PNG inside the repo (default: curve.png)"
+        description: "Path to the curve PNG inside the repo (default: Sport Gloves Vice (Minimal Wear).png)"
         required: false
         type: string
-        default: "curve.png"
+        default: "Sport Gloves Vice (Minimal Wear).png"
 
 jobs:
   forecast:

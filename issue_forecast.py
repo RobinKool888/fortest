@@ -321,7 +321,10 @@ def make_predictions(
             future_date = ref_date + timedelta(days=fd)
             t_fut       = (future_date - origin).days
             val         = info["func"](t_fut, *info["popt"])
-            preds[name][fd] = (future_date, int(round(val)))
+            if not np.isfinite(val):
+                preds[name][fd] = (future_date, None)
+            else:
+                preds[name][fd] = (future_date, int(round(val)))
 
     # 打印预测表
     col_w = 13
@@ -335,7 +338,9 @@ def make_predictions(
         fd_date = ref_date + timedelta(days=fd)
         row = f"{str(fd_date.date()):^12}{fd:^10}"
         for n in results:
-            row += f"{preds[n][fd][1]:^{col_w},}"
+            v = preds[n][fd][1]
+            val_str = f"{v:^{col_w},}" if isinstance(v, int) else f"{'N/A':^{col_w}}"
+            row += val_str
         print(row)
     print("=" * len(header_row))
 
@@ -345,14 +350,16 @@ def make_predictions(
     print("  " + "-" * 32)
     for fd in future_days:
         fd_date, val = preds[best_name][fd]
-        print(f"  {str(fd_date.date()):12s} {'+'+str(fd):6s} {val:>10,}")
+        val_str = f"{val:>10,}" if isinstance(val, int) else f"{'N/A':>10s}"
+        print(f"  {str(fd_date.date()):12s} {'+'+str(fd):6s} {val_str}")
 
     # ── 保存 Step-3 输出: predictions.csv ──
     rows = []
     for fd in future_days:
         row: dict = {"days_ahead": fd, "date": str((ref_date + timedelta(days=fd)).date())}
         for n in results:
-            row[n] = preds[n][fd][1]
+            v = preds[n][fd][1]
+            row[n] = v if isinstance(v, int) else None
         rows.append(row)
     pred_df = pd.DataFrame(rows)
     pred_df.to_csv(out_csv, index=False)
@@ -479,7 +486,9 @@ def _plot_forecast(
     t_all   = np.linspace(t_min, t_end, 800)
     dates_all = [origin + timedelta(days=float(t)) for t in t_all]
     y_all   = info["func"](t_all, *info["popt"])
+    y_max_obs = df["issue_count"].max()
     y_all   = np.where(np.isfinite(y_all), y_all, np.nan)  # neutralise Inf/NaN before plotting
+    y_all   = np.clip(y_all, 0, y_max_obs * 20)  # cap at 20× observed max to prevent extreme divergence
 
     t_vals  = _t(df["date"], origin)
     y_vals  = df["issue_count"].values
@@ -491,15 +500,19 @@ def _plot_forecast(
     hist_mask = np.array(dates_all) <= ref_date
     pred_mask = np.array(dates_all) >= ref_date
 
-    ax.plot(np.array(dates_all)[hist_mask], y_all[hist_mask],
-            color=GREEN_LINE, lw=2, label=_L(f"历史拟合 ({best_name})", f"Historical fit ({best_name})"))
-    ax.plot(np.array(dates_all)[pred_mask], y_all[pred_mask],
-            color=CYAN_LINE, lw=2, ls="--", label=_L("预测趋势", "Forecast trend"))
+    if np.any(np.isfinite(y_all[hist_mask])):
+        ax.plot(np.array(dates_all)[hist_mask], y_all[hist_mask],
+                color=GREEN_LINE, lw=2, label=_L(f"历史拟合 ({best_name})", f"Historical fit ({best_name})"))
+    if np.any(np.isfinite(y_all[pred_mask])):
+        ax.plot(np.array(dates_all)[pred_mask], y_all[pred_mask],
+                color=CYAN_LINE, lw=2, ls="--", label=_L("预测趋势", "Forecast trend"))
 
     ax.scatter(df["date"], y_vals, color=GREEN_LITE, s=3, alpha=0.4, zorder=3)
 
     for fd in future_days:
         fd_date, val = preds[best_name][fd]
+        if val is None or not np.isfinite(val):
+            continue
         ax.scatter([fd_date], [val], color=CYAN_LINE, s=45, zorder=6)
         ax.annotate(
             f"+{fd}d\n{val:,}",
@@ -529,6 +542,18 @@ def _plot_forecast(
     ax2 = ax.twinx()
     ax2.set_facecolor(DARK_BG)
     ax2.tick_params(colors=MUTED_TEXT, labelsize=8)
+
+    # Compute y-limits from finite data only — never trust ax.get_ylim() directly
+    finite_y = y_all[np.isfinite(y_all)]
+    if len(finite_y) > 0:
+        y_lo, y_hi = float(np.nanmin(finite_y)), float(np.nanmax(finite_y))
+    else:
+        y_lo, y_hi = float(y_vals.min()), float(y_vals.max())
+
+    # Ensure ax y-limits are set to finite values before reading them (2% padding)
+    ax.set_ylim(y_lo * 0.98 if y_lo > 0 else y_lo - abs(y_lo) * 0.02,
+                y_hi * 1.02)
+
     ylim = ax.get_ylim()
     if ref_count and ref_count != 0 and all(np.isfinite(y) for y in ylim):
         ax2.set_ylim([(y - ref_count) / ref_count * 100 for y in ylim])
