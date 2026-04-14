@@ -43,7 +43,7 @@ brew install --cask font-noto-sans-cjk
 
 ```bash
 python issue_forecast.py \
-    --image       curve.png \
+    --image       "Sport Gloves Vice (Minimal Wear).png" \
     --left-date   2025-10-26 \
     --left-count  9650 \
     --right-date  2026-04-09 \
@@ -56,7 +56,7 @@ All five output files are written to the same directory as the image.
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `--image` | No | `curve.png` (next to script) | Path to the curve PNG |
+| `--image` | No | `Sport Gloves Vice (Minimal Wear).png` (next to script) | Path to the curve PNG |
 | `--left-date` | **Yes** | — | Date at the left edge of the X-axis (`YYYY-MM-DD`) |
 | `--left-count` | **Yes** | — | Issue count at the left edge |
 | `--right-date` | **Yes** | — | Date at the right edge of the X-axis (`YYYY-MM-DD`) |
@@ -71,7 +71,7 @@ All five output files are written to the same directory as the image.
 
 ### One-time setup
 
-1. **Push your curve image** to the repository root (default name: `curve.png`).  
+1. **Push your curve image** to the repository root (default name: `Sport Gloves Vice (Minimal Wear).png`).  
    If you use a different path, pass it via the `image_path` input.
 
 2. The workflow file is already at `.github/workflows/forecast.yml` — no
@@ -91,7 +91,7 @@ All five output files are written to the same directory as the image.
    | Right-edge count | **Yes** | `12200` |
    | Forecast date (`today`) | No | `2026-04-14` |
    | Forecast horizons | No | `30 60 90 180 365 730` |
-   | Image path in repo | No | `curve.png` |
+   | Image path in repo | No | `Sport Gloves Vice (Minimal Wear).png` |
 
 4. Click **Run workflow**.
 
