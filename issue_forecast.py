@@ -479,6 +479,7 @@ def _plot_forecast(
     t_all   = np.linspace(t_min, t_end, 800)
     dates_all = [origin + timedelta(days=float(t)) for t in t_all]
     y_all   = info["func"](t_all, *info["popt"])
+    y_all   = np.where(np.isfinite(y_all), y_all, np.nan)  # neutralise Inf/NaN before plotting
 
     t_vals  = _t(df["date"], origin)
     y_vals  = df["issue_count"].values
@@ -529,7 +530,8 @@ def _plot_forecast(
     ax2.set_facecolor(DARK_BG)
     ax2.tick_params(colors=MUTED_TEXT, labelsize=8)
     ylim = ax.get_ylim()
-    ax2.set_ylim([(y - ref_count) / ref_count * 100 for y in ylim])
+    if ref_count and ref_count != 0 and all(np.isfinite(y) for y in ylim):
+        ax2.set_ylim([(y - ref_count) / ref_count * 100 for y in ylim])
     ax2.set_ylabel(_L("相对增幅 (%)", "Relative Growth (%)"), color=MUTED_TEXT, fontsize=9)
     ax2.spines["right"].set_edgecolor(GRID_COLOR)
 
